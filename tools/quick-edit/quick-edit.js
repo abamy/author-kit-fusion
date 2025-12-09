@@ -2,6 +2,7 @@ const hostname = window.location.hostname;
 let initialized = false;
 
 import { loadPage } from '../../scripts/scripts.js';
+import { saveCursorPosition, restoreCursorPosition } from './utils.js';
 
 const QUICK_EDIT_ID = 'quick-edit-iframe';
 const QUICK_EDIT_SRC =
@@ -106,7 +107,17 @@ function handleLoad({ target, config, location }) {
       if (element) {
         // if we're editing this element ourselves, we need to use the stored length instead of the current, post edit length
         const oldLength = parseInt(element.getAttribute('data-initial-length'), 10) || element.textContent.length;
+        
+        // Save cursor position if user is currently editing this element
+        const savedCursorPosition = saveCursorPosition(element);
+        
         element.textContent = text;
+        
+        // Restore cursor position if it was saved
+        if (savedCursorPosition !== null) {
+          restoreCursorPosition(element, savedCursorPosition);
+        }
+        
         const lengthDiff = text.length - oldLength;
         updateInstrumentation(lengthDiff, cursorOffset - 1);
       }
