@@ -48,6 +48,8 @@ function setupContentEditableListeners(port) {
           textCursorOffset,
         });
       }
+      // save the length before we started editing it
+      e.target.setAttribute('data-initial-length', e.target.textContent.length);
     });
 
     element.addEventListener('input', (e) => {
@@ -66,6 +68,21 @@ function setupContentEditableListeners(port) {
   });
 }
 
+function updateInstrumentation(lengthDiff, offset) {
+  const editableElements = document.querySelectorAll('[data-cursor]');
+  editableElements.forEach((element) => {
+    const cursorValue = parseInt(element.getAttribute('data-cursor'), 10);
+    if (cursorValue > offset) {
+      const newCursorValue = cursorValue + lengthDiff;
+      element.setAttribute('data-cursor', newCursorValue);
+    }
+    // update lengths where they're saved
+    if (element.getAttribute('data-initial-length')) {
+      element.setAttribute('data-initial-length', element.textContent.length);
+    }
+  });
+}
+
 function handleLoad({ target, config, location }) {
   const CHANNEL = new MessageChannel();
   const { port1, port2 } = CHANNEL;
@@ -81,6 +98,18 @@ function handleLoad({ target, config, location }) {
       document.body.innerHTML = doc.body.innerHTML;
       await loadPage();
       setupContentEditableListeners(port1);
+    }
+
+    if (e.data.set === 'text') {
+      const { text, cursorOffset } = e.data;
+      const element = document.querySelector(`[data-cursor="${cursorOffset - 1}"]`);
+      if (element) {
+        // if we're editing this element ourselves, we need to use the stored length instead of the current, post edit length
+        const oldLength = parseInt(element.getAttribute('data-initial-length'), 10) || element.textContent.length;
+        element.textContent = text;
+        const lengthDiff = text.length - oldLength;
+        updateInstrumentation(lengthDiff, cursorOffset - 1);
+      }
     }
   };
 }
