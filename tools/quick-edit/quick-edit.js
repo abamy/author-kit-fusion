@@ -120,6 +120,11 @@ function handleLoad({ target, config, location }) {
         
         const lengthDiff = text.length - oldLength;
         updateInstrumentation(lengthDiff, cursorOffset - 1);
+      } else {
+        // request a reload, since it's probably a new paragraph element
+        port1.postMessage({
+          type: 'reload',
+        });
       }
     }
   };
