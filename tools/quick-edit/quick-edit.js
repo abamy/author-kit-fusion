@@ -46,8 +46,6 @@ function handleInteraction(e, port) {
       textCursorOffset,
     });
   }
-  // save the length before we started editing it
-  e.target.setAttribute('data-initial-length', e.target.textContent.length);
 }
 
 function setupContentEditableListeners(port) {
@@ -65,6 +63,11 @@ function setupContentEditableListeners(port) {
       port.postMessage({
         type: 'cursor-move',
       });
+    });
+
+    element.addEventListener('focus', (e) => {
+        // save the length before we started editing it
+      e.target.setAttribute('data-initial-length', e.target.textContent.length);
     });
 
     element.addEventListener('input', (e) => {
@@ -95,30 +98,6 @@ function updateInstrumentation(lengthDiff, offset) {
       element.setAttribute('data-initial-length', element.textContent.length);
     }
   });
-}
-
-function getCssPathFromMain(element) {
-  const path = [];
-  let current = element;
-  
-  // Traverse up to the closest main element
-  while (current && current.tagName && current.tagName.toLowerCase() !== 'main') {
-    const parent = current.parentElement;
-    if (!parent) break;
-    
-    const siblings = Array.from(parent.children);
-    const index = siblings.indexOf(current);
-    const tagName = current.tagName.toLowerCase();
-    
-    path.unshift(`${tagName}:nth-child(${index + 1})`);
-    current = parent;
-  }
-  
-  if (current && current.tagName && current.tagName.toLowerCase() === 'main') {
-    path.unshift('main');
-  }
-  
-  return path.join(' > ');
 }
 
 function setRemoteCursors() {
@@ -167,7 +146,6 @@ function handleLoad({ target, config, location }) {
 
   port1.onmessage = async (e) => {
     initialized = true;
-    console.log("quick-edit message received", e.data);
 
     if (e.data.set && e.data.set === 'body') {
       const doc = new DOMParser().parseFromString(e.data.body, 'text/html');
