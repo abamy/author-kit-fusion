@@ -117,6 +117,21 @@ function setRemoteCursors() {
   });
 }
 
+function setupCloseButton() {
+  const button = document.createElement('button');
+  button.className = 'quick-edit-close';
+  button.title = 'Close Quick Edit';
+  
+  const icon = document.createElement('i');
+  icon.className = 'icon-close';
+  button.appendChild(icon);
+  
+  button.addEventListener('click', () => {
+    window.location.reload();
+  });
+  document.body.appendChild(button);
+}
+
 function handleLoad({ target, config, location }) {
   const CHANNEL = new MessageChannel();
   const { port1, port2 } = CHANNEL;
@@ -132,6 +147,7 @@ function handleLoad({ target, config, location }) {
       await loadPage();
       setRemoteCursors();
       setupContentEditableListeners(port1);
+      setupCloseButton();
     }
 
     if (e.data.set === 'text') {
