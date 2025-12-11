@@ -3,6 +3,7 @@ let initialized = false;
 
 import { loadPage } from '../../scripts/scripts.js';
 import { saveCursorPosition, restoreCursorPosition } from './utils.js';
+import { initializePageMapper, applyLiveElementAttributes } from './page-mapper-integration.js';
 
 const QUICK_EDIT_ID = 'quick-edit-iframe';
 const QUICK_EDIT_SRC =
@@ -26,12 +27,11 @@ function pollConnection(action) {
 function getCursorPosition(element) {
   const selection = window.getSelection();
   if (!selection.rangeCount) return 0;
-  
+
   const range = selection.getRangeAt(0);
   const preCaretRange = range.cloneRange();
   preCaretRange.selectNodeContents(element);
   preCaretRange.setEnd(range.endContainer, range.endOffset);
-  
   return preCaretRange.toString().length;
 }
 
@@ -50,6 +50,9 @@ function handleInteraction(e, port) {
 
 function setupContentEditableListeners(port) {
   const editableElements = document.querySelectorAll('[contenteditable="true"]');
+
+  console.log(`[Quick Edit] Setting up listeners for ${editableElements.length} mapped elements`);
+
   editableElements.forEach((element) => {
     element.addEventListener('click', (e) => {
       handleInteraction(e, port);
@@ -66,7 +69,7 @@ function setupContentEditableListeners(port) {
     });
 
     element.addEventListener('focus', (e) => {
-        // save the length before we started editing it
+      // save the length before we started editing it
       e.target.setAttribute('data-initial-length', e.target.textContent.length);
     });
 
@@ -149,8 +152,16 @@ function handleLoad({ target, config, location }) {
 
     if (e.data.set && e.data.set === 'body') {
       const doc = new DOMParser().parseFromString(e.data.body, 'text/html');
+
       document.body.innerHTML = doc.body.innerHTML;
       await loadPage();
+
+      // Initialize page-mapper with source HTML
+      await initializePageMapper(e.data.body);
+
+      // Apply all attributes to make elements "live" and editable
+      applyLiveElementAttributes();
+
       setRemoteCursors();
       setupContentEditableListeners(port1);
     }
@@ -161,17 +172,17 @@ function handleLoad({ target, config, location }) {
       if (element) {
         // if we're editing this element ourselves, we need to use the stored length instead of the current, post edit length
         const oldLength = parseInt(element.getAttribute('data-initial-length'), 10) || element.textContent.length;
-        
+
         // Save cursor position if user is currently editing this element
         const savedCursorPosition = saveCursorPosition(element);
-        
+
         element.textContent = text;
-        
+
         // Restore cursor position if it was saved
         if (savedCursorPosition !== null) {
           restoreCursorPosition(element, savedCursorPosition);
         }
-        
+
         const lengthDiff = text.length - oldLength;
         updateInstrumentation(lengthDiff, cursorOffset - 1);
       } else {
@@ -184,21 +195,21 @@ function handleLoad({ target, config, location }) {
 
     if (e.data.set === 'cursors') {
       const doc = new DOMParser().parseFromString(e.data.body, 'text/html');
-      
+
       // Remove all existing data-cursor attributes from current document
       const currentElements = document.querySelectorAll('[data-cursor-remote]');
       currentElements.forEach((element) => {
         element.removeAttribute('data-cursor-remote');
       });
-      
+
       // Get all elements with data-cursor from the parsed doc
       const parsedElements = doc.querySelectorAll('[data-cursor-remote]');
-      
+
       // For each element in parsed doc, find matching element in current doc by data-cursor
       parsedElements.forEach((parsedElement) => {
         const remoteCursorValue = parsedElement.getAttribute('data-cursor-remote');
         const dataCursor = parsedElement.getAttribute('data-cursor');
-        
+
         // Find element in current document with the same data-cursor value
         if (dataCursor) {
           const matchingElement = document.querySelector(`[data-cursor="${dataCursor}"]`);
@@ -207,7 +218,7 @@ function handleLoad({ target, config, location }) {
           }
         }
       });
-      
+
       setRemoteCursors();
     }
   };
