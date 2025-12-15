@@ -53,8 +53,11 @@ describe('Source Hash Embedder', () => {
       const h1 = doc.querySelector('h1');
       const p = doc.querySelector('p');
 
-      expect(h1.textContent).to.match(/^HASH_H1_[a-zA-Z0-9]+_HTML$/);
-      expect(p.textContent).to.match(/^HASH_P_[a-zA-Z0-9]+_HTML$/);
+      // Markers should be at the beginning, followed by original content
+      expect(h1.textContent).to.match(/^HASH_H1_[a-zA-Z0-9]+_HTML /);
+      expect(h1.textContent).to.include('Test Heading');
+      expect(p.textContent).to.match(/^HASH_P_[a-zA-Z0-9]+_HTML /);
+      expect(p.textContent).to.include('Test paragraph');
     });
 
     it('should preserve element attributes', () => {
@@ -147,17 +150,71 @@ describe('Source Hash Embedder', () => {
     });
   });
 
-  describe('Element skipping', () => {
-    it('should skip elements with child editable elements', () => {
+  describe('Nested elements', () => {
+    it('should inject markers into nested elements preserving structure', () => {
+      const html = '<main><p>Hello <strong><i>world</i></strong></p></main>';
+      const config = { ...DEFAULT_CONFIG, targetSelectors: ['p', 'strong', 'i'] };
+      const result = embedSourceMarkers(html, config);
+      const doc = new DOMParser().parseFromString(result.markedHTML, 'text/html');
+
+      // All elements should have markers
+      const p = doc.querySelector('p');
+      const strong = doc.querySelector('strong');
+      const i = doc.querySelector('i');
+
+      // Check that each element has a marker by inspecting the first text node
+      const getFirstTextNode = (el) => {
+        for (const node of el.childNodes) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            return node.textContent;
+          }
+        }
+        return '';
+      };
+
+      expect(getFirstTextNode(p)).to.match(/^HASH_P_/);
+      expect(getFirstTextNode(strong)).to.match(/^HASH_STRONG_/);
+      expect(getFirstTextNode(i)).to.match(/^HASH_I_/);
+
+      // Check that nested structure is preserved
+      expect(p.querySelector('strong')).to.exist;
+      expect(p.querySelector('i')).to.exist;
+      expect(strong.querySelector('i')).to.exist;
+    });
+
+    it('should process child elements before parent elements', () => {
       const html = '<main><div><p>Outer</p><div><p>Inner</p></div></div></main>';
       const result = embedSourceMarkers(html, DEFAULT_CONFIG);
       const doc = new DOMParser().parseFromString(result.markedHTML, 'text/html');
 
-      // Should only inject into leaf elements
+      // All paragraph elements should have markers
       const paragraphs = doc.querySelectorAll('p');
       paragraphs.forEach((p) => {
         expect(p.textContent).to.match(/HASH_/);
       });
+
+      // Structure should be preserved
+      expect(paragraphs.length).to.equal(2);
+    });
+
+    it('should handle complex nested structures', () => {
+      const html = '<main><p>Text <strong>bold <em>italic</em> more</strong> end</p></main>';
+      const config = { ...DEFAULT_CONFIG, targetSelectors: ['p', 'strong', 'em'] };
+      const result = embedSourceMarkers(html, config);
+      const doc = new DOMParser().parseFromString(result.markedHTML, 'text/html');
+
+      const p = doc.querySelector('p');
+      const strong = doc.querySelector('strong');
+      const em = doc.querySelector('em');
+
+      // All elements should exist and have markers
+      expect(p).to.exist;
+      expect(strong).to.exist;
+      expect(em).to.exist;
+
+      expect(p.textContent).to.include('HASH_P_');
+      expect(strong.textContent).to.include('HASH_STRONG_');
+      expect(em.textContent).to.include('HASH_EM_');
     });
   });
 

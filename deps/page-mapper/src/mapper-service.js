@@ -82,20 +82,21 @@ export class MapperService {
 
   /**
    * Gets all mapped element pairs (source → page)
-   * Uses paths from iframe mapping to find elements in LIVE document
    * 
+   * @param {Document} [pageDoc] - Optional page document to search in.
+   *                                If not provided, uses the live browser document.
    * @returns {Array<{source: {element: Element, path: Array}, page: {element: Element, path: Array}}>} Array of mapped pairs with paths
    */
-  getAllMappedElements() {
+  getAllMappedElements(pageDoc = null) {
     const mappedPairs = [];
     const sourceRoot = this.sourceDoc.querySelector(this.config.rootSelector);
 
-    // Get LIVE document root (not iframe)
-    const livePageDoc = typeof document !== 'undefined' ? document : null;
-    if (!sourceRoot || !livePageDoc) return mappedPairs;
+    // Use provided document or fall back to live document
+    const targetDoc = pageDoc || (typeof document !== 'undefined' ? document : null);
+    if (!sourceRoot || !targetDoc) return mappedPairs;
 
-    const livePageRoot = livePageDoc.querySelector(this.config.rootSelector);
-    if (!livePageRoot) return mappedPairs;
+    const pageRoot = targetDoc.querySelector(this.config.rootSelector);
+    if (!pageRoot) return mappedPairs;
 
     // Iterate through all markers
     for (const [marker, sourcePath] of this.markerToSourcePath.entries()) {
@@ -106,9 +107,9 @@ export class MapperService {
       const sourceElement = getElementByPath(sourceRoot, sourcePath);
       if (!sourceElement) continue;
 
-      // Use pagePath (from iframe) to find element in LIVE document
-      const livePageElement = getElementByPath(livePageRoot, pagePath);
-      if (!livePageElement) continue;
+      // Find element in target document using path
+      const pageElement = getElementByPath(pageRoot, pagePath);
+      if (!pageElement) continue;
 
       mappedPairs.push({
         source: {
@@ -116,7 +117,7 @@ export class MapperService {
           path: sourcePath
         },
         page: {
-          element: livePageElement,
+          element: pageElement,
           path: pagePath
         }
       });

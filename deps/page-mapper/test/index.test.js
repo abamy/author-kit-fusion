@@ -94,6 +94,42 @@ describe('Page Mapper Package Exports', () => {
 
       const path = getElementPath(child, root);
       expect(path).to.be.an('array');
+      expect(path).to.have.lengthOf(1);
+      expect(path[0]).to.deep.equal({ tag: 'P', index: 0 });
+    });
+
+    it('should handle nested elements in getElementPath', () => {
+      const root = document.createElement('main');
+      const div = document.createElement('div');
+      const span = document.createElement('span');
+      const p = document.createElement('p');
+
+      root.appendChild(div);
+      div.appendChild(span);
+      span.appendChild(p);
+
+      const path = getElementPath(p, root);
+      expect(path).to.be.an('array');
+      expect(path).to.have.lengthOf(3);
+      expect(path[0]).to.deep.equal({ tag: 'DIV', index: 0 });
+      expect(path[1]).to.deep.equal({ tag: 'SPAN', index: 0 });
+      expect(path[2]).to.deep.equal({ tag: 'P', index: 0 });
+    });
+
+    it('should handle multiple siblings in getElementPath', () => {
+      const root = document.createElement('main');
+      const p1 = document.createElement('p');
+      const p2 = document.createElement('p');
+      const p3 = document.createElement('p');
+
+      root.appendChild(p1);
+      root.appendChild(p2);
+      root.appendChild(p3);
+
+      const path = getElementPath(p2, root);
+      expect(path).to.be.an('array');
+      expect(path).to.have.lengthOf(1);
+      expect(path[0]).to.deep.equal({ tag: 'P', index: 1 });
     });
 
     it('should export getElementByPath function', () => {

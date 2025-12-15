@@ -40,6 +40,37 @@ function getElementPath(el, rootSelector) {
 }
 
 /**
+ * Gets the depth of an element from the root
+ * @param {Element} element - Element to get depth for
+ * @param {Element} root - Root element
+ * @returns {number} Depth from root
+ */
+function getDepth(element, root) {
+  let depth = 0;
+  let current = element;
+  while (current && current !== root) {
+    depth += 1;
+    current = current.parentElement;
+  }
+  return depth;
+}
+
+/**
+ * Gets the first text node that belongs directly to the element
+ * (not within a child element)
+ * @param {Element} element - Element to search
+ * @returns {Text|null} First text node or null
+ */
+function getFirstOwnTextNode(element) {
+  for (const node of element.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/**
  * Embeds tracking markers into target elements
  * Pure function: takes HTML string and config, returns data
  * 
@@ -74,18 +105,18 @@ function embedSourceMarkers(sourceHTML, config) {
     : targetSelectors;
   const targetElements = root.querySelectorAll(targetSelectorsStr);
 
-  // Helper to check if element should be skipped
-  const shouldSkipElement = (element) => {
-    // Skip if element has child target elements
-    const childEdits = element.querySelectorAll(targetSelectorsStr);
-    return childEdits.length > 0;
-  };
+  // Convert NodeList to Array and process in reverse order (deepest first)
+  // This ensures child elements get their markers before parent elements
+  const elementsArray = Array.from(targetElements);
 
-  targetElements.forEach((element) => {
-    if (shouldSkipElement(element)) {
-      return;
-    }
+  // Sort by depth (deepest first) to process children before parents
+  elementsArray.sort((a, b) => {
+    const depthA = getDepth(a, root);
+    const depthB = getDepth(b, root);
+    return depthB - depthA; // Reverse order: deepest first
+  });
 
+  elementsArray.forEach((element) => {
     const elementType = element.tagName;
     const elementMarkers = [];
 
@@ -121,17 +152,27 @@ function embedSourceMarkers(sourceHTML, config) {
         }
       });
     } else {
-      // For text elements (H1-H6, P, etc.), embed marker into textContent
-      const originalText = element.textContent || '';
-      if (originalText.trim()) {
+      // For text elements, inject marker while preserving child elements
+      // Only process elements that have some content (text or children)
+
+      const hasContent = element.textContent.trim() || element.childNodes.length > 0;
+
+      if (hasContent) {
         const htmlMarker = createHash(elementType, 'HTML', hashPrefix, hashIdLength);
+
+        // Store the original innerHTML (with all nested structure)
+        const originalHTML = element.innerHTML || '';
+
         markerMap.set(htmlMarker, {
           type: 'html',
-          value: originalText,
+          value: originalHTML,
           element: elementType,
         });
-        // Set textContent only - this preserves all attributes
-        element.textContent = htmlMarker;
+
+        // Inject marker at the beginning while preserving all child elements
+        const markerNode = element.ownerDocument.createTextNode(htmlMarker + ' ');
+        element.insertBefore(markerNode, element.firstChild);
+
         elementMarkers.push(htmlMarker);
       }
     }
