@@ -5,6 +5,7 @@ import { loadStyle } from '../../scripts/ak.js';
 import { loadPage } from '../../scripts/scripts.js';
 import { getSchema } from 'https://main--da-live--adobe.aem.live/blocks/edit/prose/schema.js';
 import { EditorState, EditorView } from 'https://main--da-live--adobe.aem.live/deps/da-y-wrapper/dist/index.js';
+import { showToolbar, hideToolbar, setCurrentEditorView, updateToolbarState, handleToolbarKeydown } from './toolbar.js';
 
 let remoteUpdate = false;
 
@@ -268,11 +269,21 @@ function createProsemirrorEditor(cursorOffset, state, port1) {
     editorParent, { 
       state: editorState,
       handleDOMEvents: {
+        focus: (view, event) => {
+          setCurrentEditorView(view);
+          showToolbar();
+          return false;
+        },
         blur: (view, event) => {
+          hideToolbar();
+          setCurrentEditorView(null);
           port1.postMessage({
             type: 'cursor-move',
           });
           return false; // Let other handlers run
+        },
+        keydown: (view, event) => {
+          return handleToolbarKeydown(event);
         }
       },
       dispatchTransaction: (tr) => {
@@ -304,10 +315,14 @@ function createProsemirrorEditor(cursorOffset, state, port1) {
             textCursorOffset: newSelection,
           });
         }
+        
+        // Update toolbar button states
+        updateToolbarState();
       }
     });
   element.replaceWith(editorParent);
   editorParent.view = editorView;
+  
   setRemoteCursors();
 }
 
