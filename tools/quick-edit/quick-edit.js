@@ -4,6 +4,10 @@ let initialized = false;
 import { loadStyle } from '../../scripts/ak.js';
 import { loadPage } from '../../scripts/scripts.js';
 import { saveCursorPosition, restoreCursorPosition } from './utils.js';
+import { getSchema } from 'https://main--da-live--adobe.aem.live/blocks/edit/prose/schema.js';
+import { EditorState, EditorView } from 'https://main--da-live--adobe.aem.live/deps/da-y-wrapper/dist/index.js';
+
+let remoteUpdate = false;
 
 loadStyle('/tools/quick-edit/quick-edit.css');
 
@@ -38,53 +42,41 @@ function getCursorPosition(element) {
   return preCaretRange.toString().length;
 }
 
-function handleInteraction(e, port) {
-  const dataCursor = e.target.getAttribute('data-cursor');
-  // Send cursor position when user clicks into the element
-  if (port && dataCursor) {
-    const textCursorOffset = getCursorPosition(e.target);
-    port.postMessage({
-      type: 'cursor-move',
-      cursorOffset: parseInt(dataCursor, 10),
-      textCursorOffset,
-    });
-  }
-}
+// function handleInteraction(e, port) {
+//   const dataCursor = e.target.getAttribute('data-cursor');
+//   // Send cursor position when user clicks into the element
+//   if (port && dataCursor) {
+//     const textCursorOffset = getCursorPosition(e.target);
+//     port.postMessage({
+//       type: 'cursor-move',
+//       cursorOffset: parseInt(dataCursor, 10),
+//       textCursorOffset,
+//     });
+//   }
+// }
 
 function setupContentEditableListeners(port) {
-  const editableElements = document.querySelectorAll('[contenteditable="true"]');
+  const editableElements = document.querySelectorAll('[data-cursor]');
   editableElements.forEach((element) => {
-    element.addEventListener('click', (e) => {
-      handleInteraction(e, port);
+    const dataCursor = parseInt(element.getAttribute('data-cursor'), 10);
+
+    port.postMessage({
+      type: 'get-editor',
+      cursorOffset: dataCursor,
     });
 
-    element.addEventListener('keyup', (e) => {
-      handleInteraction(e, port);
-    });
-
-    element.addEventListener('blur', (e) => {
-      port.postMessage({
-        type: 'cursor-move',
-      });
-    });
-
-    element.addEventListener('focus', (e) => {
-        // save the length before we started editing it
-      e.target.setAttribute('data-initial-length', e.target.textContent.length);
-    });
-
-    element.addEventListener('input', (e) => {
-      const newText = e.target.textContent;
-      const dataCursor = e.target.getAttribute('data-cursor');
-      // Send the update back to the editor
-      if (port && dataCursor) {
-        port.postMessage({
-          type: 'content-update',
-          newText,
-          cursorOffset: parseInt(dataCursor, 10),
-        });
-      }
-    });
+    // element.addEventListener('input', (e) => {
+    //   const newText = e.target.textContent;
+    //   const dataCursor = e.target.getAttribute('data-cursor');
+    //   // Send the update back to the editor
+    //   if (port && dataCursor) {
+    //     port.postMessage({
+    //       type: 'content-update',
+    //       newText,
+    //       cursorOffset: parseInt(dataCursor, 10),
+    //     });
+    //   }
+    // });
   });
 }
 
@@ -264,6 +256,102 @@ function setRemoteCursors() {
   });
 }
 
+function createProsemirrorEditor(cursorOffset, state, port1) {
+  const existingEditorParent = document.querySelector(`.prosemirror-editor[data-cursor="${cursorOffset}"]`);
+  if (existingEditorParent) {
+    const editorEl = existingEditorParent.view;
+    if (editorEl) {
+      // Editor already exists, update it with a transaction
+      const view = editorEl;
+      const schema = view.state.schema;
+      const node = schema.nodeFromJSON(state);
+      
+      // Create transaction to replace the root node (first child of doc)
+      const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, node);
+      remoteUpdate = true;
+      view.dispatch(tr);
+      remoteUpdate = false;
+      return;
+    }
+  }
+
+  const schema = getSchema();
+
+  const node = schema.nodeFromJSON(state);
+
+  const doc = schema.node('doc', null, [node]);
+
+  const editorState = EditorState.create({
+    doc,
+    schema,
+  });
+
+  const editorParent = document.createElement('div');
+  editorParent.setAttribute('data-cursor', cursorOffset);
+  editorParent.classList.add('prosemirror-editor');
+
+  const element = document.querySelector(`[data-cursor="${cursorOffset}"]`);
+
+  if (!element) {
+    port1.postMessage({
+      type: 'reload',
+    });
+    return;
+  }
+  if (element.getAttribute('data-cursor-remote')) {
+    editorParent.setAttribute('data-cursor-remote', element.getAttribute('data-cursor-remote'));
+    editorParent.setAttribute('data-cursor-remote-color', element.getAttribute('data-cursor-remote-color'));
+  }
+
+  const editorView = new EditorView(
+    editorParent, { 
+      state: editorState,
+      handleDOMEvents: {
+        blur: (view, event) => {
+          port1.postMessage({
+            type: 'cursor-move',
+          });
+          return false; // Let other handlers run
+        }
+      },
+      dispatchTransaction: (tr) => {
+        const numChanges = tr.steps.length;
+        const currentCursorOffset = parseInt(editorParent.getAttribute('data-cursor'));
+        const oldLength = editorView.state.doc.firstChild.nodeSize;
+        const oldSelection = editorView.state.selection.from;
+        const newState = editorView.state.apply(tr);
+        editorView.updateState(newState);
+        updateInstrumentation(newState.doc.firstChild.nodeSize - oldLength, currentCursorOffset);
+
+        if (remoteUpdate) { return; }
+
+        // Check if selection changed
+        const newSelection = newState.selection.from;
+        if (oldSelection !== newSelection) {
+          console.log('cursor-move', currentCursorOffset, newSelection);
+          port1.postMessage({
+            type: 'cursor-move',
+            cursorOffset: currentCursorOffset - 1,
+            textCursorOffset: newSelection,
+          });
+        }
+        
+        if (numChanges > 0) {
+          console.log('seinding node update');
+          const editedEl = newState.doc.firstChild;
+          port1.postMessage({
+            type: 'node-update',
+            node: editedEl.toJSON(),
+            cursorOffset: currentCursorOffset,
+          });
+        }
+      }
+    });
+  element.replaceWith(editorParent);
+  editorParent.view = editorView;
+  setRemoteCursors();
+}
+
 function setupCloseButton() {
   const button = document.createElement('button');
   button.className = 'quick-edit-close';
@@ -292,37 +380,14 @@ function handleLoad({ target, config, location }) {
       const doc = new DOMParser().parseFromString(e.data.body, 'text/html');
       document.body.innerHTML = doc.body.innerHTML;
       await loadPage();
-      setRemoteCursors();
       setupContentEditableListeners(port1);
       setupImageDropListeners(port1);
       setupCloseButton();
     }
 
-    if (e.data.set === 'text') {
-      const { text, cursorOffset } = e.data;
-      const element = document.querySelector(`[data-cursor="${cursorOffset - 1}"]`);
-      if (element) {
-        // if we're editing this element ourselves, we need to use the stored length instead of the current, post edit length
-        const oldLength = parseInt(element.getAttribute('data-initial-length'), 10) || element.textContent.length;
-        
-        // Save cursor position if user is currently editing this element
-        const savedCursorPosition = saveCursorPosition(element);
-        
-        element.textContent = text;
-        
-        // Restore cursor position if it was saved
-        if (savedCursorPosition !== null) {
-          restoreCursorPosition(element, savedCursorPosition);
-        }
-        
-        const lengthDiff = text.length - oldLength;
-        updateInstrumentation(lengthDiff, cursorOffset - 1);
-      } else {
-        // request a reload, since it's probably a new paragraph element
-        port1.postMessage({
-          type: 'reload',
-        });
-      }
+    if (e.data.set === 'editor') {
+      const { editor, cursorOffset } = e.data;
+      createProsemirrorEditor(cursorOffset, editor, port1);
     }
 
     if (e.data.set === 'cursors') {
@@ -376,7 +441,6 @@ function handleLoad({ target, config, location }) {
 export default async function loadQuickEdit({ detail: payload }) {
   if (document.getElementById(QUICK_EDIT_ID)) return;
 
-  console.log("quick-edit", payload);
   const iframe = document.createElement("iframe");
   iframe.id = QUICK_EDIT_ID;
   iframe.src = QUICK_EDIT_SRC;
@@ -387,5 +451,5 @@ export default async function loadQuickEdit({ detail: payload }) {
   });
   document.documentElement.append(iframe);
   iframe.id = 'quick-edit-iframe';
-  // iframe.style.visibility = 'hidden';
+  iframe.style.visibility = 'hidden';
 }
