@@ -1,0 +1,13 @@
+{
+  "project": "Author Kit Fusion",
+  "editUrlLabel": "Document Authoring",
+  "editUrlPattern": "https://da.live/edit#/{{org}}/{{site}}{{pathname}}",
+  "plugins": [
+    {
+      "id": "quick-edit",
+      "title": "Quick Edit",
+      "event": "quick-edit",
+      "environments": ["preview", "dev"]
+    }
+  ]
+}
